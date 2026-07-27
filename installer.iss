@@ -10,7 +10,7 @@ SolidCompression=yes
 SetupIconFile=icon.ico
 
 [Files]
-Source: "dist\AmazighASR.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\AmazighASR\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Amazigh-ASR"; Filename: "{app}\AmazighASR.exe"
