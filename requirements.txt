@@ -7,7 +7,7 @@ transformers
 tokenizers
 safetensors
 sentencepiece
-torch
-torchaudio
+torch==2.8.0
+torchaudio==2.8.0
 PyQt5
 huggingface_hub
