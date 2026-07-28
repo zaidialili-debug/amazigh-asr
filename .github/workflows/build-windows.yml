@@ -37,8 +37,7 @@ jobs:
           KMP_DUPLICATE_LIB_OK: "TRUE"
           OMP_NUM_THREADS: "1"
         run: |
-          pyinstaller --onedir --windowed --noupx --name "AmazighASR" --icon=icon.ico --add-data "icons;icons" --add-data "crlca.png;." --add-data "logo1.png;." --exclude-module sentencepiece --exclude-module torch.testing --exclude-module torchgen --exclude-module tensorflow --exclude-module IPython --exclude-module notebook --exclude-module tkinter --exclude-module PySide2 --exclude-module PySide6 --exclude-module PyQt6 main.py
-
+          pyinstaller --onedir --windowed --noupx --name "AmazighASR" --icon=icon.ico --add-data "icons;icons" --add-data "crlca.png;." --add-data "logo1.png;." --exclude-module sentencepiece --exclude-module tensorflow --exclude-module IPython --exclude-module notebook --exclude-module tkinter --exclude-module PySide2 --exclude-module PySide6 --exclude-module PyQt6 --hidden-import torchgen --collect-submodules torchgen main.py
       - name: Install Inno Setup
         run: choco install innosetup -y
 
