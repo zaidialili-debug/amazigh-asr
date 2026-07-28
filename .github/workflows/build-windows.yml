@@ -26,7 +26,7 @@ jobs:
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onedir --windowed --name "AmazighASR" --icon=icon.ico --add-data "icons;icons" --add-data "crlca.png;." --add-data "logo1.png;." --exclude-module sentencepiece main.py
+          pyinstaller --onedir --windowed --name "AmazighASR" --icon=icon.ico --add-data "icons;icons" --add-data "crlca.png;." --add-data "logo1.png;." --exclude-module sentencepiece --collect-all torch --collect-all torchaudio main.py
 
       - name: Install Inno Setup
         run: choco install innosetup -y
