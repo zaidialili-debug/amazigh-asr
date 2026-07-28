@@ -9,7 +9,7 @@ import soundfile as sf
 import tempfile
 import shutil
 import noisereduce as nr
-import librosa
+import torchaudio
 import platform
 import subprocess
 
@@ -31,7 +31,15 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout
                             QMenu, QAction, QDialog, QSizePolicy, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt5.QtGui import QIcon, QPalette, QBrush, QPixmap, QFont
-
+def load_audio_resampled(path, target_sr):
+    """Charge un fichier audio en mono et le reechantillonne."""
+    audio, sr = sf.read(path, dtype="float32", always_2d=True)
+    audio = audio.mean(axis=1)
+    if sr != target_sr:
+        tensor = torch.from_numpy(audio).unsqueeze(0)
+        tensor = torchaudio.functional.resample(tensor, sr, target_sr)
+        audio = tensor.squeeze(0).numpy()
+    return audio, target_sr
 # --- Punctuation stop criterion ---
 class StopOnPunctuationCriteria(StoppingCriteria):
     def __init__(self, stop_token_ids):
@@ -221,9 +229,9 @@ class TranscriptionThread(QThread):
             # Load audio
             try:
                 target_sr = 16000
-                audio_input, sr = librosa.load(self.audio_file, sr=target_sr)
+                audio_input, sr = load_audio_resampled(self.audio_file, target_sr)
             except Exception as e:
-                self.transcription_complete.emit(f"File reading error (librosa): {e}")
+                self.transcription_complete.emit(f"File reading error: {e}")
                 return
 
             self.progress_update.emit(50)
