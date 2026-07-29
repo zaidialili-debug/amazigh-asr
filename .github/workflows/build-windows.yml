@@ -32,12 +32,18 @@ jobs:
           python -c "import transformers; print('TRANSFORMERS =', transformers.__version__)"
           pip list
 
+      - name: Telecharger le modele
+        run: |
+          python -c "from huggingface_hub import snapshot_download; snapshot_download('Alili113/whisper-tamazight-final1', local_dir='model', allow_patterns=['*.json','*.txt','*.safetensors','*.model'])"
+          python -c "import os; print('Taille modele (Mo):', round(sum(os.path.getsize(os.path.join(r,f)) for r,_,fs in os.walk('model') for f in fs)/1048576))"
+
       - name: Build executable with PyInstaller
         env:
           KMP_DUPLICATE_LIB_OK: "TRUE"
           OMP_NUM_THREADS: "1"
         run: |
-          pyinstaller --onedir --windowed --noupx --name "AmazighASR" --icon=icon.ico --add-data "icons;icons" --add-data "crlca.png;." --add-data "logo1.png;." --exclude-module sentencepiece --exclude-module tensorflow --exclude-module IPython --exclude-module notebook --exclude-module tkinter --exclude-module PySide2 --exclude-module PySide6 --exclude-module PyQt6 --hidden-import torchgen --collect-submodules torchgen main.py
+          pyinstaller --onedir --windowed --noupx --name "AmazighASR" --icon=icon.ico --add-data "icons;icons" --add-data "crlca.png;." --add-data "logo1.png;." --add-data "model;model" --exclude-module sentencepiece --exclude-module tensorflow --exclude-module IPython --exclude-module notebook --exclude-module tkinter --exclude-module PySide2 --exclude-module PySide6 --exclude-module PyQt6 --hidden-import torchgen --collect-submodules torchgen main.py
+
       - name: Install Inno Setup
         run: choco install innosetup -y
 

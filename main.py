@@ -31,6 +31,32 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout
                             QMenu, QAction, QDialog, QSizePolicy, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt5.QtGui import QIcon, QPalette, QBrush, QPixmap, QFont
+
+
+def resource_path(relative_path):
+    """Chemin d'une ressource, en dev comme en mode PyInstaller."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative_path)
+
+
+def user_data_path():
+    """Dossier inscriptible pour les donnees utilisateur."""
+    if platform.system() == "Windows":
+        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Amazigh-ASR")
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".amazigh-asr")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def model_location(model_name):
+    """Dossier local si le modele est embarque, sinon l'identifiant Hugging Face."""
+    local_dir = resource_path("model")
+    if os.path.exists(os.path.join(local_dir, "config.json")):
+        return local_dir
+    return model_name
+
+
 def load_audio_resampled(path, target_sr):
     """Charge un fichier audio en mono et le reechantillonne."""
     audio, sr = sf.read(path, dtype="float32", always_2d=True)
@@ -40,6 +66,8 @@ def load_audio_resampled(path, target_sr):
         tensor = torchaudio.functional.resample(tensor, sr, target_sr)
         audio = tensor.squeeze(0).numpy()
     return audio, target_sr
+
+
 # --- Punctuation stop criterion ---
 class StopOnPunctuationCriteria(StoppingCriteria):
     def __init__(self, stop_token_ids):
@@ -50,6 +78,7 @@ class StopOnPunctuationCriteria(StoppingCriteria):
         if input_ids[0][-1] in self.stop_token_ids:
             return True
         return False
+
 
 # --- Tifinagh converter ---
 class TifinaghConverter:
@@ -63,13 +92,13 @@ class TifinaghConverter:
             "Ɛ": "ⵄ", "V": "ⵠ", "Q": "ⵇ", "R": "ⵔ", "S": "ⵙ",
             "T": "ⵜ", "W": "ⵡ", "X": "ⵅ", "Y": "ⵢ", "Z": "ⵣ",
             "P": "ⵠ", "O": "ⵓ",
-            "gʷ": "ⴳⵯ", "kʷ": "ⴽⵯ", "ch": "ⵛ", "gh": "ⴴ", "kh": "ⵅ", "X":"ⵅ","x":"ⵅ", "sh": "ⵛ",
+            "gʷ": "ⴳⵯ", "kʷ": "ⴽⵯ", "ch": "ⵛ", "gh": "ⴴ", "kh": "ⵅ", "x": "ⵅ", "sh": "ⵛ",
             "ts": "ⵜⵙ", "dz": "ⴷⵣ", "ḍ": "ⴹ", "ṭ": "ⵟ", "ẓ": "ⵥ", "ṣ": "ⵚ", "ṛ": "ⵕ",
             "a": "ⴰ", "e": "ⴻ", "i": "ⵉ", "u": "ⵓ",
             "b": "ⴱ", "d": "ⴷ", "f": "ⴼ", "g": "ⴳ", "h": "ⵀ",
             "j": "ⵊ", "k": "ⴽ", "l": "ⵍ", "m": "ⵎ", "n": "ⵏ",
             "ɛ": "ⵄ", "v": "ⵠ", "q": "ⵇ", "r": "ⵔ", "s": "ⵙ",
-            "t": "ⵜ", "w": "ⵡ", "x": "ⵅ", "y": "ⵢ", "z": "ⵣ",
+            "t": "ⵜ", "w": "ⵡ", "y": "ⵢ", "z": "ⵣ",
             "p": "ⵠ", "o": "ⵓ",
             " ": " ", "\n": "\n", "\t": "\t", ".": ".", ",": ",", "?": "?", "!": "!",
             ":": ":", ";": ";", "(": ")", "-": "-", "'": "'", "`": "`", "/": "/",
@@ -92,6 +121,7 @@ class TifinaghConverter:
                 result.append(text[i])
                 i += 1
         return "".join(result)
+
 
 # --- Recorder (Recording) ---
 class AudioRecorder(QThread):
@@ -130,7 +160,7 @@ class AudioRecorder(QThread):
             if len(self.audio_data) > 0:
                 audio = np.concatenate(self.audio_data, axis=0)
                 sf.write(self.temp_file, audio, self.sample_rate)
-                time.sleep(0.5) 
+                time.sleep(0.5)
                 self.finished.emit(self.temp_file)
             else:
                 self.finished.emit("ERROR: No audio recorded.")
@@ -139,6 +169,7 @@ class AudioRecorder(QThread):
 
     def stop(self):
         self.recording = False
+
 
 # --- AudioProcessor ---
 class AudioProcessor(QThread):
@@ -154,28 +185,29 @@ class AudioProcessor(QThread):
         try:
             self.progress.emit(10)
             audio_input, sr = sf.read(self.audio_file)
-            
+
             if len(audio_input.shape) > 1:
                 audio_input = np.mean(audio_input, axis=1)
 
             self.progress.emit(30)
             clean_audio = nr.reduce_noise(y=audio_input, sr=sr, stationary=False)
             self.progress.emit(60)
-            
+
             max_val = np.max(np.abs(clean_audio))
             if max_val > 0:
                 clean_audio = clean_audio / max_val
-            
+
             self.progress.emit(80)
-            
+
             temp_file = os.path.join(tempfile.gettempdir(), f"amazigh_proc_{int(time.time())}.wav")
             sf.write(temp_file, clean_audio, sr)
-            
+
             self.progress.emit(100)
             self.processed.emit(temp_file)
 
         except Exception as e:
             self.error.emit(f"Processing error: {str(e)}")
+
 
 # --- Transcription thread (FORCE CPU MODIFICATION) ---
 class TranscriptionThread(QThread):
@@ -201,22 +233,27 @@ class TranscriptionThread(QThread):
                 return
 
             self.progress_update.emit(10)
-            
-            model_path = self.model_name
-            print(f"Loading model from: {model_path}")
+
+            model_path = model_location(self.model_name)
+            offline = os.path.isdir(model_path)
+            load_kwargs = {"local_files_only": True} if offline else {}
+            print(f"Loading model from: {model_path} (offline={offline})")
 
             # Load model
             try:
-                self.processor = AutoProcessor.from_pretrained(model_path)
-                self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_path).to(self.device)
+                self.processor = AutoProcessor.from_pretrained(model_path, **load_kwargs)
+                self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_path, **load_kwargs).to(self.device)
             except Exception as e:
                 error_text = str(e)
                 if "feature extractor" in error_text or "preprocessor_config.json" in error_text:
                     try:
-                        tokenizer = WhisperTokenizer.from_pretrained(model_path)
-                        feature_extractor = WhisperFeatureExtractor.from_pretrained("openai/whisper-base")
+                        tokenizer = WhisperTokenizer.from_pretrained(model_path, **load_kwargs)
+                        if offline:
+                            feature_extractor = WhisperFeatureExtractor.from_pretrained(model_path, local_files_only=True)
+                        else:
+                            feature_extractor = WhisperFeatureExtractor.from_pretrained("openai/whisper-base")
                         self.processor = WhisperProcessor(feature_extractor=feature_extractor, tokenizer=tokenizer)
-                        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_path).to(self.device)
+                        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_path, **load_kwargs).to(self.device)
                     except Exception as fallback_error:
                         self.transcription_complete.emit(f"Model loading error: {fallback_error}")
                         return
@@ -225,7 +262,7 @@ class TranscriptionThread(QThread):
                     return
 
             self.progress_update.emit(40)
-            
+
             # Load audio
             try:
                 target_sr = 16000
@@ -291,6 +328,7 @@ class TranscriptionThread(QThread):
             error_message = f"Critical transcription error ({self.device}): {str(e)}"
             self.transcription_complete.emit(error_message)
 
+
 # --- About Dialog ---
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
@@ -338,19 +376,19 @@ class AboutDialog(QDialog):
             <b>(code: 03/10/TTTAL/CRLCA/2023)</b>, this tool was created within the
             <b>Terminology, Translation and Automatic Processing of Natural Language (TTTAL)</b>
             division of the <b>Center for Research in Amazigh Language and Culture (CRLCA)</b> in Béjaïa.</p>
-            
+
             <p>This strategic project aims to bridge the digital divide by equipping the Amazigh language
             with state-of-the-art technological tools, enabling precise conversion of speech
             into text and opening the way to many applications such as voice dictation and
             digital accessibility in Tamazight.</p>
-            
+
             <h4>Technical Information</h4>
             <ul>
                 <li><b>Version:</b> 1.0 (2026)</li>
                 <li><b>Model:</b> whisper-small</li>
                 <li><b>Goal:</b> facilitate the collection, processing and validation of Amazigh audio corpora</li>
             </ul>
-            
+
             <h4>Authors</h4>
             <ul>
                 <li>Dr. Ali ZAIDI</li>
@@ -366,6 +404,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
         layout.addWidget(description_text)
         layout.addWidget(close_button, 0, Qt.AlignRight)
+
 
 # --- Guidelines Dialog ---
 class GuidelinesDialog(QDialog):
@@ -449,6 +488,7 @@ class GuidelinesDialog(QDialog):
         layout.addWidget(guidelines_text)
         layout.addWidget(close_button, 0, Qt.AlignRight)
 
+
 # --- Main Window ---
 class AudioTranscriptionApp(QMainWindow):
     def __init__(self):
@@ -482,7 +522,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.init_ui()
 
     def set_background_image(self):
-        background_path = "background.jpg"
+        background_path = resource_path("background.jpg")
         if os.path.exists(background_path):
             palette = QPalette()
             pixmap = QPixmap(background_path)
@@ -499,7 +539,7 @@ class AudioTranscriptionApp(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        background_path = "background.jpg"
+        background_path = resource_path("background.jpg")
         if os.path.exists(background_path):
             palette = QPalette()
             pixmap = QPixmap(background_path)
@@ -587,12 +627,12 @@ class AudioTranscriptionApp(QMainWindow):
         about_action.setShortcut("F1")
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
-        
+
         guidelines_action = QAction("Guidelines", self)
         guidelines_action.setShortcut("F2")
         guidelines_action.triggered.connect(self.show_guidelines_dialog)
         help_menu.addAction(guidelines_action)
-        
+
         self.menuBar().addMenu(help_menu)
 
         central_widget = QWidget()
@@ -709,7 +749,7 @@ class AudioTranscriptionApp(QMainWindow):
         header_layout_inner = QHBoxLayout(header_widget)
 
         self.left_logo_label = QLabel()
-        left_logo_path = "logo1.png"
+        left_logo_path = resource_path("logo1.png")
         if os.path.exists(left_logo_path):
             logo_pixmap = QPixmap(left_logo_path)
             scaled_logo = logo_pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -726,7 +766,7 @@ class AudioTranscriptionApp(QMainWindow):
         header_layout_inner.addWidget(title_label, 1)
 
         self.right_logo_label = QLabel()
-        right_logo_path = "crlca.png"
+        right_logo_path = resource_path("crlca.png")
         if os.path.exists(right_logo_path):
             logo_pixmap = QPixmap(right_logo_path)
             scaled_logo = logo_pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -765,7 +805,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.record_button = QPushButton(" Start Recording")
         self.record_button.clicked.connect(self.toggle_recording)
         self.record_button.setIconSize(self.icon_size)
-        self.record_button.setIcon(QIcon(os.path.join("icons", "record.png")))
+        self.record_button.setIcon(QIcon(resource_path(os.path.join("icons", "record.png"))))
         self.record_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.record_button.setMinimumHeight(56)
         self.record_button.setMinimumWidth(240)
@@ -783,7 +823,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.open_button = QPushButton(" Open Audio File")
         self.open_button.clicked.connect(self.open_audio_file)
         self.open_button.setIconSize(self.icon_size)
-        self.open_button.setIcon(QIcon(os.path.join("icons", "folder_open.png")))
+        self.open_button.setIcon(QIcon(resource_path(os.path.join("icons", "folder_open.png"))))
         self.open_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.open_button.setMinimumHeight(56)
         self.open_button.setMinimumWidth(240)
@@ -795,7 +835,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.process_audio_button.clicked.connect(self.process_audio)
         self.process_audio_button.setEnabled(False)
         self.process_audio_button.setIconSize(self.icon_size)
-        self.process_audio_button.setIcon(QIcon(os.path.join("icons", "save.png")))
+        self.process_audio_button.setIcon(QIcon(resource_path(os.path.join("icons", "save.png"))))
         self.process_audio_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.process_audio_button.setMinimumHeight(56)
         self.process_audio_button.setMinimumWidth(240)
@@ -806,7 +846,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.transcribe_button.clicked.connect(self.start_transcription)
         self.transcribe_button.setEnabled(False)
         self.transcribe_button.setIconSize(self.icon_size)
-        self.transcribe_button.setIcon(QIcon(os.path.join("icons", "transcribe.png")))
+        self.transcribe_button.setIcon(QIcon(resource_path(os.path.join("icons", "transcribe.png"))))
         self.transcribe_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.transcribe_button.setMinimumHeight(56)
         self.transcribe_button.setMinimumWidth(240)
@@ -829,19 +869,19 @@ class AudioTranscriptionApp(QMainWindow):
         self.play_button.clicked.connect(lambda: self.play_file_external(self.audio_file_path))
         self.play_button.setEnabled(False)
         self.play_button.setIconSize(self.icon_size)
-        self.play_button.setIcon(QIcon(os.path.join("icons", "audio_file.png")))
+        self.play_button.setIcon(QIcon(resource_path(os.path.join("icons", "audio_file.png"))))
         self.play_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.play_button.setMinimumHeight(56)
         self.play_button.setMinimumWidth(220)
         self.play_button.setMaximumWidth(320)
         playback_layout.addWidget(self.play_button, 1)
-        
+
         self.play_processed_button = QPushButton(" Play Processed")
         self.play_processed_button.setObjectName("playProcessedButton")
         self.play_processed_button.clicked.connect(lambda: self.play_file_external(self.processed_audio_path))
         self.play_processed_button.setEnabled(False)
         self.play_processed_button.setIconSize(self.icon_size)
-        self.play_processed_button.setIcon(QIcon(os.path.join("icons", "audio_file.png")))
+        self.play_processed_button.setIcon(QIcon(resource_path(os.path.join("icons", "audio_file.png"))))
         self.play_processed_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.play_processed_button.setMinimumHeight(56)
         self.play_processed_button.setMinimumWidth(220)
@@ -852,7 +892,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.clear_button.setObjectName("clearButton")
         self.clear_button.clicked.connect(self.clear_interface)
         self.clear_button.setIconSize(self.icon_size)
-        self.clear_button.setIcon(QIcon(os.path.join("icons", "clear.png")))
+        self.clear_button.setIcon(QIcon(resource_path(os.path.join("icons", "clear.png"))))
         self.clear_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.clear_button.setMinimumHeight(56)
         self.clear_button.setMinimumWidth(220)
@@ -863,7 +903,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.validate_button.setObjectName("validateButton")
         self.validate_button.clicked.connect(self.validate_transcription)
         self.validate_button.setIconSize(self.icon_size)
-        self.validate_button.setIcon(QIcon(os.path.join("icons", "save.png")))
+        self.validate_button.setIcon(QIcon(resource_path(os.path.join("icons", "save.png"))))
         self.validate_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.validate_button.setMinimumHeight(56)
         self.validate_button.setMinimumWidth(220)
@@ -874,7 +914,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.edit_button.setObjectName("editButton")
         self.edit_button.clicked.connect(self.edit_transcription)
         self.edit_button.setIconSize(self.icon_size)
-        self.edit_button.setIcon(QIcon(os.path.join("icons", "edit.png")))
+        self.edit_button.setIcon(QIcon(resource_path(os.path.join("icons", "edit.png"))))
         self.edit_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.edit_button.setMinimumHeight(56)
         self.edit_button.setMinimumWidth(220)
@@ -969,19 +1009,19 @@ class AudioTranscriptionApp(QMainWindow):
             QMessageBox.critical(self, "Playback error", error_message)
 
     def update_timer(self):
-        pass 
+        pass
 
     def process_audio(self):
         if not self.audio_file_path:
             QMessageBox.warning(self, "Warning", "Select audio file first.")
             return
-        
+
         self.process_progress.setVisible(True)
         self.process_progress.setValue(0)
         self.process_audio_button.setEnabled(False)
         self.play_button.setEnabled(False)
         self.play_processed_button.setEnabled(False)
-        
+
         self.audio_processor = AudioProcessor(self.audio_file_path)
         self.audio_processor.progress.connect(self.update_process_progress)
         self.audio_processor.processed.connect(self.on_audio_processed)
@@ -1054,7 +1094,7 @@ class AudioTranscriptionApp(QMainWindow):
 
     def on_recording_finished(self, file_path):
         self.record_button.setText("🎤 Start Recording")
-        
+
         if file_path.startswith("ERROR"):
             QMessageBox.critical(self, "Recording error", file_path)
             self.file_label.setText("Recording failed")
@@ -1066,7 +1106,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.time_label.setText("00:00")
 
     def open_audio_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Audio", "", "Audio Files (*.wav *.flac *.mp3 *.ogg *.m4a)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Audio", "", "Audio Files (*.wav *.flac *.mp3 *.ogg)")
         if file_path:
             self.audio_file_path = file_path
             self.file_label.setText(f"File: {os.path.basename(file_path)}")
@@ -1098,7 +1138,7 @@ class AudioTranscriptionApp(QMainWindow):
 
     def on_transcription_complete(self, latin_transcription):
         self.text_edit.setPlainText(latin_transcription)
-        
+
         valid = not latin_transcription.startswith("Error")
 
         if valid:
@@ -1111,7 +1151,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.toggle_buttons(True)
         if not self.processed_audio_path:
             self.play_processed_button.setEnabled(False)
-        
+
         if not valid:
             QMessageBox.critical(self, "Transcription error", latin_transcription)
             print(f"Received error: {latin_transcription}")
@@ -1127,7 +1167,7 @@ class AudioTranscriptionApp(QMainWindow):
             QMessageBox.warning(self, "Validation", "No transcription to validate.")
             return
 
-        project_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = user_data_path()
         audios_dir = os.path.join(project_dir, "audios")
         os.makedirs(audios_dir, exist_ok=True)
 
@@ -1228,6 +1268,7 @@ class AudioTranscriptionApp(QMainWindow):
         self.file_button.setEnabled(True)
         self.progress_bar.setVisible(False)
         self.process_progress.setVisible(False)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
